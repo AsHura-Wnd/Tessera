@@ -16,6 +16,8 @@ These phases represent the current development direction. They are not unconditi
 
 Build the smallest useful and reliable Tessera.
 
+**Timebox:** Target 3–4 weeks of focused work. Review the phase at that point regardless of completion status.
+
 ### Scope
 
 - task representation
@@ -23,8 +25,9 @@ Build the smallest useful and reliable Tessera.
 - model/provider interface
 - configurable local Ollama adapter
 - tool interface and registry
-- defensive tool validation
-- explicit capability and safety boundaries
+- fixed allow-list validation for tool calls
+- per-task action budgets for tool usage
+- explicit capability and safety boundaries within the fixed Phase 1 tool set
 - local file discovery
 - local file read/write/edit operations
 - append-only trajectory recording
@@ -53,12 +56,18 @@ The model proposes structured intent. Tessera validates that proposal against re
 
 A model such as `qwen2.5vl:3b` may be used for development if available, but no specific model is canonical or required by Tessera's architecture. Phase 1 reasoning is text-first.
 
-### Phase 1 acceptance benchmark
+### Phase 1 safety boundary
+
+Each tool call is checked against a fixed allow-list of Phase 1 operations and a per-task action budget (for example, a maximum number of file writes/edits). Phase 1 does **not** introduce a dynamic policy engine, general permission framework, or generalized sandboxing system.
+
+### Phase 1 benchmark
 
 Define 10 predefined local tasks:
 
 - 5 FIND tasks
 - 5 DO tasks
+
+FIND tasks in this phase are **local-filesystem-only**, such as locating a file matching criteria or locating text within files.
 
 Run the benchmark repeatedly and record a trajectory for every execution.
 
@@ -67,6 +76,10 @@ Run the benchmark repeatedly and record a trajectory for every execution.
 > **Tessera completes at least 9/10 predefined test tasks with a human-verified correct outcome, with a valid trajectory recorded for every run.**
 
 The benchmark should test actual agent behavior—goal interpretation, tool selection, execution, observation, and stopping—not a hidden hardcoded sequence.
+
+### Phase 1 verification boundary
+
+Deterministic verification in Phase 1 means checking local file state before/after an operation and confirming that the resulting file content or expected state matches the task's objective. It should not grow into the broader evidence/provenance system planned for later phases.
 
 ### Phase exit
 
