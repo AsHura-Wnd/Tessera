@@ -143,10 +143,15 @@ class OllamaProvider(ModelProvider):
         host: str | None = None,
         client: Any | None = None,
         options: Mapping[str, Any] | None = None,
+        think: bool | str | None = False,
     ) -> None:
         self.model = model
         self.host = host
         self.options = dict(options) if options is not None else None
+        if self.options and "think" in self.options:
+            self.think = self.options["think"]
+        else:
+            self.think = think
         self._client = client
 
     @property
@@ -209,9 +214,27 @@ class OllamaProvider(ModelProvider):
             kwargs["tools"] = formatted_tools
         if self.options:
             kwargs["options"] = self.options
+        if self.think is not None:
+            kwargs["think"] = self.think
 
         try:
             response = self.client.chat(**kwargs)
+        except TypeError as te:
+            # Handle mock clients or older ollama versions that do not accept 'think'
+            if "think" in str(te) and "think" in kwargs:
+                kwargs.pop("think")
+                try:
+                    response = self.client.chat(**kwargs)
+                except Exception as e:
+                    return ProviderResult.create_provider_failure(
+                        error=f"Model provider request failed: {e}",
+                        raw_response=None,
+                    )
+            else:
+                return ProviderResult.create_provider_failure(
+                    error=f"Model provider request failed: {te}",
+                    raw_response=None,
+                )
         except Exception as e:
             return ProviderResult.create_provider_failure(
                 error=f"Model provider request failed: {e}",

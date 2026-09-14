@@ -404,3 +404,138 @@ def test_tool_identity_spoofing_via_registry_is_rejected(workspace: Path) -> Non
     assert res.error is not None
     assert "does not match the canonical phase 1 definition" in res.error.lower()
 
+
+# ---------------------------------------------------------------------------
+# Test 10: Workspace-root default path resolution regression tests
+# ---------------------------------------------------------------------------
+
+
+def test_file_find_with_omitted_directory_resolves_to_workspace_root(validator: ToolValidator, workspace: Path) -> None:
+    """Requirement 1: file_find with omitted directory resolves to workspace_root."""
+    call = ToolCall("file_find", {"pattern": "*.py"})
+    res = validator.validate(call)
+    assert res.is_valid is True
+    assert "directory" in res.resolved_paths
+    assert res.resolved_paths["directory"] == workspace.resolve()
+
+
+def test_file_find_with_explicit_dot_resolves_to_workspace_root(validator: ToolValidator, workspace: Path) -> None:
+    """Requirement 2: file_find with directory='.' resolves to workspace_root."""
+    call = ToolCall("file_find", {"directory": ".", "pattern": "*.py"})
+    res = validator.validate(call)
+    assert res.is_valid is True
+    assert "directory" in res.resolved_paths
+    assert res.resolved_paths["directory"] == workspace.resolve()
+
+
+def test_file_find_with_relative_directory_resolves_beneath_workspace_root(validator: ToolValidator, workspace: Path) -> None:
+    """Requirement 3: file_find with relative directory resolves beneath workspace_root."""
+    call = ToolCall("file_find", {"directory": "sub", "pattern": "*.py"})
+    res = validator.validate(call)
+    assert res.is_valid is True
+    assert "directory" in res.resolved_paths
+    assert res.resolved_paths["directory"] == (workspace / "sub").resolve()
+
+
+def test_omitted_default_for_custom_tool_path_parameter(workspace: Path) -> None:
+    """Requirement 4: Omitted default for another path parameter resolves relative to workspace_root."""
+    from typing import Mapping
+
+    custom_tool = ToolDefinition(
+        name="custom_scanner",
+        description="Custom scanner with path default",
+        parameters={
+            "scan_dir": ToolParameter(
+                name="scan_dir",
+                type=str,
+                description="Directory to scan",
+                required=False,
+                default="sub",
+                is_path=True,
+            ),
+        },
+        handler=lambda **kwargs: ToolResult(success=True, output=kwargs),
+    )
+
+    class CustomValidator(ToolValidator):
+        @property
+        def allowed_tool_names(self) -> frozenset[str]:
+            return frozenset({"custom_scanner"})
+
+        @property
+        def canonical_tools(self) -> Mapping[str, ToolDefinition]:
+            return {"custom_scanner": custom_tool}
+
+    registry = ToolRegistry(tools=[custom_tool])
+    val = CustomValidator(workspace_root=workspace, registry=registry)
+
+    # When scan_dir is omitted, default 'sub' resolves to workspace_root / 'sub'
+    res = val.validate(ToolCall("custom_scanner", {}))
+    assert res.is_valid is True
+    assert "scan_dir" in res.resolved_paths
+    assert res.resolved_paths["scan_dir"] == (workspace / "sub").resolve()
+
+
+def test_non_path_defaults_are_not_treated_as_filesystem_paths(validator: ToolValidator, workspace: Path) -> None:
+    """Requirement 5: Non-path defaults are NOT treated as filesystem paths or added to resolved_paths."""
+    # pattern has default="*" and content_pattern has default=None, but neither is_path=True
+    call = ToolCall("file_find", {})
+    res = validator.validate(call)
+    assert res.is_valid is True
+    assert "pattern" not in res.resolved_paths
+    assert "content_pattern" not in res.resolved_paths
+    assert set(res.resolved_paths.keys()) == {"directory"}
+
+
+def test_existing_traversal_and_containment_protections_still_pass(validator: ToolValidator, workspace: Path) -> None:
+    """Requirement 6: Traversal attempts in path parameters continue to be strictly rejected."""
+    traversal_calls = [
+        ToolCall("file_find", {"directory": "../outside", "pattern": "*.txt"}),
+        ToolCall("file_find", {"directory": "../../..", "pattern": "*.txt"}),
+        ToolCall("file_read", {"path": "../outside.txt"}),
+        ToolCall("file_write", {"path": "../escaped.txt", "content": "leak"}),
+    ]
+    for call in traversal_calls:
+        res = validator.validate(call)
+        assert res.is_valid is False
+        assert res.error is not None
+        assert "outside workspace root" in res.error.lower()
+
+
+def test_phase2_validator_resolves_path_defaults(workspace: Path) -> None:
+    """Requirement 7: Phase2ToolValidator inherits the exact path default resolution behavior."""
+    from tessera.tools.validator import Phase2ToolValidator
+
+    p2_val = Phase2ToolValidator(workspace_root=workspace)
+    res = p2_val.validate(ToolCall("file_find", {"pattern": "*.py"}))
+    assert res.is_valid is True
+    assert res.resolved_paths["directory"] == workspace.resolve()
+
+
+def test_agent_loop_execution_actually_uses_resolved_default(workspace: Path) -> None:
+    """Requirement 8: AgentLoop tool execution actually passes resolved workspace_root default."""
+    from tessera.agent.loop import AgentLoop, RunStatus
+    from tessera.models.provider import ModelProvider, ProviderResult
+
+    class SingleCallProvider(ModelProvider):
+        def generate(self, prompt: str, tools=None, context=None):
+            if not context:
+                # Propose file_find without directory
+                return ProviderResult.create_tool_call("file_find", {"pattern": "nested.py"})
+            return ProviderResult.create_text("Done")
+
+    loop = AgentLoop(
+        provider=SingleCallProvider(),
+        workspace_root=workspace,
+    )
+
+    run_result = loop.run(goal="Find nested.py")
+    assert run_result.status == RunStatus.TEXT
+    assert run_result.steps_taken == 2
+    # Check that execution output found sub/nested.py inside the workspace!
+    assert run_result.last_tool_result is not None
+    assert run_result.last_tool_result.success is True
+    matches = run_result.last_tool_result.output
+    assert len(matches) == 1
+    assert matches[0]["path"] == "sub/nested.py"
+

@@ -437,3 +437,97 @@ def test_model_provider_interface_is_swappable() -> None:
     assert res2.kind == ProviderOutcome.TOOL_CALL
     assert res2.tool_name == "file_read"
     assert res2.arguments == {"path": "foo.txt"}
+
+
+def test_ollama_provider_default_thinking_behavior_is_false() -> None:
+    """Requirement 1: Default OllamaProvider explicitly requests think=False."""
+    mock_client = FakeModelClient(
+        response={
+            "message": {
+                "role": "assistant",
+                "content": "Hello world",
+                "tool_calls": None,
+            }
+        }
+    )
+    provider = OllamaProvider(client=mock_client)
+    assert provider.think is False
+
+    result = provider.generate(prompt="Hello")
+    assert result.kind == ProviderOutcome.TEXT
+    assert mock_client.chat.called is True
+    call_kwargs = mock_client.chat.call_args.kwargs
+    assert call_kwargs.get("think") is False
+
+
+def test_ollama_provider_thinking_does_not_depend_on_model_name() -> None:
+    """Requirement 2: Default think=False behavior does not depend on model name."""
+    models_to_test = ["qwen3:8b", "qwen2.5:3b", "llama3:8b", "deepseek-r1:7b", "mistral:latest"]
+    for model_name in models_to_test:
+        mock_client = FakeModelClient(
+            response={
+                "message": {
+                    "role": "assistant",
+                    "content": f"Response from {model_name}",
+                    "tool_calls": None,
+                }
+            }
+        )
+        provider = OllamaProvider(model=model_name, client=mock_client)
+        assert provider.think is False
+
+        provider.generate(prompt="Hi")
+        call_kwargs = mock_client.chat.call_args.kwargs
+        assert call_kwargs["model"] == model_name
+        assert call_kwargs.get("think") is False
+
+
+def test_ollama_provider_thinking_can_be_explicitly_enabled() -> None:
+    """Requirement 3: Caller can explicitly enable thinking via parameter or options."""
+    # Via constructor parameter think=True
+    mock_client1 = FakeModelClient(
+        response={"message": {"role": "assistant", "content": "Thought out", "tool_calls": None}}
+    )
+    provider1 = OllamaProvider(client=mock_client1, think=True)
+    assert provider1.think is True
+    provider1.generate(prompt="Think deeply")
+    assert mock_client1.chat.call_args.kwargs.get("think") is True
+
+    # Via constructor parameter think="high" (or other levels)
+    mock_client2 = FakeModelClient(
+        response={"message": {"role": "assistant", "content": "Thought out", "tool_calls": None}}
+    )
+    provider2 = OllamaProvider(client=mock_client2, think="high")
+    assert provider2.think == "high"
+    provider2.generate(prompt="Think deeply")
+    assert mock_client2.chat.call_args.kwargs.get("think") == "high"
+
+    # Via options dictionary
+    mock_client3 = FakeModelClient(
+        response={"message": {"role": "assistant", "content": "Thought out", "tool_calls": None}}
+    )
+    provider3 = OllamaProvider(client=mock_client3, options={"think": True})
+    assert provider3.think is True
+    provider3.generate(prompt="Think deeply")
+    assert mock_client3.chat.call_args.kwargs.get("think") is True
+
+
+def test_ollama_provider_handles_mock_without_think_kwarg_gracefully() -> None:
+    """Requirement 4: Provider falls back gracefully if client rejects think kwarg."""
+    class StrictLegacyMockClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        def chat(self, model: str, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+            if "think" in kwargs:
+                raise TypeError("chat() got an unexpected keyword argument 'think'")
+            self.calls.append({"model": model, "messages": messages, **kwargs})
+            return {"message": {"role": "assistant", "content": "Legacy response", "tool_calls": None}}
+
+    legacy_client = StrictLegacyMockClient()
+    provider = OllamaProvider(client=legacy_client)
+    res = provider.generate(prompt="Legacy test")
+    assert res.kind == ProviderOutcome.TEXT
+    assert res.text == "Legacy response"
+    assert len(legacy_client.calls) == 1
+    assert "think" not in legacy_client.calls[0]

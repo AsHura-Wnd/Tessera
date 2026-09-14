@@ -213,7 +213,23 @@ class ToolValidator:
                     return ValidationResult(is_valid=False, error=err)
                 resolved_paths[arg_name] = resolved_p
 
-        # 6. Specific value constraint validation
+        # 6. Resolve defaults for omitted optional path parameters
+        for param_name, param in tool.parameters.items():
+            if (
+                (param_name not in args or args[param_name] is None)
+                and param.is_path
+                and param.default is not None
+            ):
+                is_in_ws, resolved_p, err = self._validate_workspace_path(
+                    path_value=param.default,
+                    param_name=param_name,
+                    allow_root_dir=(tool_name in ("file_find", "process_run")),
+                )
+                if not is_in_ws or resolved_p is None:
+                    return ValidationResult(is_valid=False, error=err)
+                resolved_paths[param_name] = resolved_p
+
+        # 7. Specific value constraint validation
         if tool_name == "file_read":
             start_line = args.get("start_line")
             end_line = args.get("end_line")
