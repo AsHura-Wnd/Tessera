@@ -569,6 +569,73 @@ RUN_01 = BenchmarkTask(
     ],
 )
 
+RUN_02 = BenchmarkTask(
+    task_id="RUN-02",
+    task_type="RUN",
+    name="Test-Driven Defect Repair",
+    goal="Execute 'test_calc.py' using process_run with command 'python' and arguments ['test_calc.py']. Observe the failure in stderr, edit 'calc.py' using file_edit to fix the defect so the test passes, rerun 'test_calc.py' using process_run to observe exit code 0, and write 'TESTS_PASSED\n' to 'status.txt'.",
+    fixture_files={
+        "calc.py": (
+            "def add(a, b):\n"
+            "    return a - b\n"
+        ),
+        "test_calc.py": (
+            "from calc import add\n\n\n"
+            "def test_add():\n"
+            "    assert add(2, 3) == 5\n\n\n"
+            "if __name__ == '__main__':\n"
+            "    test_add()\n"
+            "    print('ALL_TESTS_PASSED')\n"
+        ),
+    },
+    verification_spec=VerificationSpec(
+        file_exists=["status.txt", "calc.py", "test_calc.py"],
+        exact_contents={
+            "status.txt": "TESTS_PASSED\n",
+            "calc.py": (
+                "def add(a, b):\n"
+                "    return a + b\n"
+            ),
+            "test_calc.py": (
+                "from calc import add\n\n\n"
+                "def test_add():\n"
+                "    assert add(2, 3) == 5\n\n\n"
+                "if __name__ == '__main__':\n"
+                "    test_add()\n"
+                "    print('ALL_TESTS_PASSED')\n"
+            ),
+        },
+    ),
+    max_steps=6,
+    deterministic_responses=[
+        ProviderResult.create_tool_call(
+            tool_name="process_run",
+            arguments={"command": "python", "arguments": ["test_calc.py"]},
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="file_edit",
+            arguments={
+                "path": "calc.py",
+                "target": "return a - b",
+                "replacement": "return a + b",
+            },
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="process_run",
+            arguments={"command": "python", "arguments": ["test_calc.py"]},
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="file_write",
+            arguments={
+                "path": "status.txt",
+                "content": "TESTS_PASSED\n",
+                "overwrite": True,
+            },
+        ),
+        ProviderResult.create_text("Fixed calc.py, verified test_calc.py passes, and recorded status to status.txt."),
+    ],
+)
+
 BENCHMARK_TASKS: dict[str, BenchmarkTask] = {
     "FIND-01": FIND_01,
     "FIND-02": FIND_02,
@@ -581,6 +648,7 @@ BENCHMARK_TASKS: dict[str, BenchmarkTask] = {
     "DO-04": DO_04,
     "DO-05": DO_05,
     "RUN-01": RUN_01,
+    "RUN-02": RUN_02,
 }
 
 

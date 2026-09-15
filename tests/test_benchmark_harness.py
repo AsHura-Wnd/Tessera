@@ -232,16 +232,16 @@ def test_07_repeated_deterministic_runs_produce_same_outcome() -> None:
 
 def test_08_all_benchmark_specifications_loadable() -> None:
     """Requirement 8: All benchmark specifications can be loaded by the harness."""
-    assert len(BENCHMARK_TASKS) == 11
+    assert len(BENCHMARK_TASKS) == 12
     expected_ids = [
         "FIND-01", "FIND-02", "FIND-03", "FIND-04", "FIND-05",
         "DO-01", "DO-02", "DO-03", "DO-04", "DO-05",
-        "RUN-01",
+        "RUN-01", "RUN-02",
     ]
     assert list(BENCHMARK_TASKS.keys()) == expected_ids
 
     all_tasks = list_tasks()
-    assert len(all_tasks) == 11
+    assert len(all_tasks) == 12
 
     for task in all_tasks:
         assert task.task_id in expected_ids
@@ -258,7 +258,7 @@ def test_08_all_benchmark_specifications_loadable() -> None:
 def test_09_runner_executes_all_deterministic_tasks() -> None:
     """Requirement 9: The runner can execute all deterministic tasks to PASS."""
     results = run_all()
-    assert len(results) == 11
+    assert len(results) == 12
 
     for res in results:
         task = get_task(res.task_id)
@@ -270,7 +270,7 @@ def test_09_runner_executes_all_deterministic_tasks() -> None:
         assert res.verification_error is None
 
     summary = format_summary(results)
-    assert "AGGREGATE: 11/11 passed (0 failed)" in summary
+    assert "AGGREGATE: 12/12 passed (0 failed)" in summary
 
 
 def test_10_benchmark_execution_does_not_modify_repo_tree() -> None:
