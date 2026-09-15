@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Sequence
+import json
 import uuid
 
 from tessera.models.provider import ModelProvider, ProviderOutcome, ProviderResult
@@ -223,12 +224,33 @@ class AgentLoop:
                         last_tool_result=tool_result,
                     )
 
-                # Append minimal serializable observation context for next iteration
+                # Anchor root user goal at the start of context if not already present
+                if not context:
+                    context.append({
+                        "role": "user",
+                        "content": goal,
+                    })
+
+                # Append structured serializable observation context for next iteration
                 context.append({
                     "role": "assistant",
-                    "content": f"Proposed tool {tool_call.tool_name} with arguments {dict(tool_call.arguments)}",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": tool_call.tool_name,
+                                "arguments": dict(tool_call.arguments),
+                            }
+                        }
+                    ],
                 })
+                formatted_output = (
+                    json.dumps(tool_result.output)
+                    if isinstance(tool_result.output, (dict, list))
+                    else (str(tool_result.output) if tool_result.output is not None else "")
+                )
                 context.append({
                     "role": "tool",
-                    "content": str(tool_result.output) if tool_result.output is not None else "",
+                    "tool_name": tool_call.tool_name,
+                    "content": formatted_output,
                 })

@@ -172,14 +172,55 @@ class OllamaProvider(ModelProvider):
         messages: list[dict[str, Any]] = []
         if context:
             for item in context:
-                if isinstance(item, Mapping):
-                    messages.append(dict(item))
-                else:
+                if not isinstance(item, Mapping):
                     return ProviderResult.create_provider_failure(
                         f"Invalid context item: expected Mapping, got {type(item).__name__}"
                     )
-        if prompt:
-            messages.append({"role": "user", "content": prompt})
+                msg = dict(item)
+                role = msg.get("role")
+                if role == "assistant":
+                    tool_calls = msg.get("tool_calls")
+                    if tool_calls is not None:
+                        normalized_tcs = []
+                        for tc in tool_calls:
+                            if isinstance(tc, Mapping):
+                                if "function" in tc and isinstance(tc["function"], Mapping):
+                                    func = tc["function"]
+                                    normalized_tcs.append({
+                                        "function": {
+                                            "name": str(func.get("name", "")),
+                                            "arguments": dict(func.get("arguments", {})),
+                                        }
+                                    })
+                                elif "name" in tc:
+                                    normalized_tcs.append({
+                                        "function": {
+                                            "name": str(tc.get("name", "")),
+                                            "arguments": dict(tc.get("arguments", {})),
+                                        }
+                                    })
+                                else:
+                                    normalized_tcs.append(dict(tc))
+                            else:
+                                normalized_tcs.append(tc)
+                        msg["tool_calls"] = normalized_tcs
+                    elif "tool_call" in msg and isinstance(msg["tool_call"], Mapping):
+                        tc = msg.pop("tool_call")
+                        msg["tool_calls"] = [{
+                            "function": {
+                                "name": str(tc.get("name", "")),
+                                "arguments": dict(tc.get("arguments", {})),
+                            }
+                        }]
+                elif role == "tool":
+                    if "tool_name" not in msg and "name" in msg:
+                        msg["tool_name"] = msg["name"]
+                messages.append(msg)
+
+        has_user_message = any(m.get("role") == "user" for m in messages)
+        if not has_user_message and prompt:
+            insert_idx = 1 if (messages and messages[0].get("role") == "system") else 0
+            messages.insert(insert_idx, {"role": "user", "content": prompt})
 
         formatted_tools: list[dict[str, Any]] = []
         if tools:
