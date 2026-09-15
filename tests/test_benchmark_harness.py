@@ -230,21 +230,22 @@ def test_07_repeated_deterministic_runs_produce_same_outcome() -> None:
         assert res.verification_error is None
 
 
-def test_08_all_10_benchmark_specifications_loadable() -> None:
-    """Requirement 8: All 10 benchmark specifications can be loaded by the harness."""
-    assert len(BENCHMARK_TASKS) == 10
+def test_08_all_benchmark_specifications_loadable() -> None:
+    """Requirement 8: All benchmark specifications can be loaded by the harness."""
+    assert len(BENCHMARK_TASKS) == 11
     expected_ids = [
         "FIND-01", "FIND-02", "FIND-03", "FIND-04", "FIND-05",
         "DO-01", "DO-02", "DO-03", "DO-04", "DO-05",
+        "RUN-01",
     ]
     assert list(BENCHMARK_TASKS.keys()) == expected_ids
 
     all_tasks = list_tasks()
-    assert len(all_tasks) == 10
+    assert len(all_tasks) == 11
 
     for task in all_tasks:
         assert task.task_id in expected_ids
-        assert task.task_type in ("FIND", "DO")
+        assert task.task_type in ("FIND", "DO", "RUN")
         assert len(task.name) > 0
         assert len(task.goal) > 0
         assert task.max_steps >= 1
@@ -254,10 +255,10 @@ def test_08_all_10_benchmark_specifications_loadable() -> None:
         assert get_task(task.task_id) is task
 
 
-def test_09_runner_executes_all_10_deterministic_tasks() -> None:
-    """Requirement 9: The runner can execute all 10 deterministic tasks to PASS."""
+def test_09_runner_executes_all_deterministic_tasks() -> None:
+    """Requirement 9: The runner can execute all deterministic tasks to PASS."""
     results = run_all()
-    assert len(results) == 10
+    assert len(results) == 11
 
     for res in results:
         task = get_task(res.task_id)
@@ -269,7 +270,7 @@ def test_09_runner_executes_all_10_deterministic_tasks() -> None:
         assert res.verification_error is None
 
     summary = format_summary(results)
-    assert "AGGREGATE: 10/10 passed (0 failed)" in summary
+    assert "AGGREGATE: 11/11 passed (0 failed)" in summary
 
 
 def test_10_benchmark_execution_does_not_modify_repo_tree() -> None:
@@ -285,7 +286,7 @@ def test_10_benchmark_execution_does_not_modify_repo_tree() -> None:
 
     # Run a full benchmark suite
     results = run_all()
-    assert len(results) == 10
+    assert len(results) == len(BENCHMARK_TASKS)
     assert all(r.overall_passed for r in results)
 
     # Check git status after

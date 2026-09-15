@@ -14,14 +14,16 @@ def handle_process_run(
     arguments: Sequence[str] | None = None,
     working_directory: str | Path | None = None,
     timeout: int | float | None = 30,
+    workspace_root: str | Path | None = None,
 ) -> ToolResult:
     """Execute a local process with explicit arguments, optional working directory, and timeout.
 
     This primitive enforces:
     - Explicit command and arguments list (no shell=True)
-    - Optional working directory validation
+    - Workspace-anchored working directory resolution (defaulting to workspace_root)
     - Real timeout enforcement and process termination
     - Structured capture of exit code, stdout, stderr, and timeout status
+    - Observable result semantics for completed processes (exit code 0 or != 0)
     - Completely serializable result shape
     """
     # 1. Validate command parameter
@@ -66,7 +68,9 @@ def handle_process_run(
             error=f"Arguments must be a list of strings, got {type(arguments).__name__}",
         )
 
-    # 3. Validate working directory parameter
+    # 3. Determine and validate working directory
+    root: Path | None = Path(workspace_root).resolve() if workspace_root is not None else None
+
     cwd: str | None = None
     if working_directory is not None:
         if not isinstance(working_directory, (str, Path)):
@@ -92,7 +96,25 @@ def handle_process_run(
                 },
                 error="Working directory cannot be an empty string",
             )
-        resolved_wd = Path(wd_str).resolve()
+        raw_wd = Path(wd_str)
+        if root is not None:
+            resolved_wd = raw_wd.resolve() if raw_wd.is_absolute() else (root / raw_wd).resolve()
+            try:
+                resolved_wd.relative_to(root)
+            except ValueError:
+                return ToolResult(
+                    success=False,
+                    output={
+                        "exit_code": None,
+                        "stdout": "",
+                        "stderr": "",
+                        "timed_out": False,
+                    },
+                    error=f"Working directory '{working_directory}' resolves outside workspace root '{root}'",
+                )
+        else:
+            resolved_wd = raw_wd.resolve()
+
         if not resolved_wd.exists():
             return ToolResult(
                 success=False,
@@ -116,6 +138,35 @@ def handle_process_run(
                 error=f"Working directory is not a directory: '{resolved_wd}'",
             )
         cwd = str(resolved_wd)
+    else:
+        # working_directory is omitted
+        if root is not None:
+            if not root.exists():
+                return ToolResult(
+                    success=False,
+                    output={
+                        "exit_code": None,
+                        "stdout": "",
+                        "stderr": "",
+                        "timed_out": False,
+                    },
+                    error=f"Workspace root does not exist: '{root}'",
+                )
+            if not root.is_dir():
+                return ToolResult(
+                    success=False,
+                    output={
+                        "exit_code": None,
+                        "stdout": "",
+                        "stderr": "",
+                        "timed_out": False,
+                    },
+                    error=f"Workspace root is not a directory: '{root}'",
+                )
+            cwd = str(root)
+        else:
+            # Standalone fallback without workspace_root
+            cwd = str(Path.cwd().resolve())
 
     # 4. Validate timeout parameter
     if timeout is None:
@@ -225,22 +276,11 @@ def handle_process_run(
             error=f"Process timed out after {effective_timeout} seconds",
         )
 
-    if exit_code != 0:
-        return ToolResult(
-            success=False,
-            output={
-                "exit_code": exit_code,
-                "stdout": stdout_str,
-                "stderr": stderr_str,
-                "timed_out": False,
-            },
-            error=f"Process exited with non-zero exit code: {exit_code}",
-        )
-
+    # Process ran to completion (exit code 0 or non-zero are both observable successful tool executions)
     return ToolResult(
         success=True,
         output={
-            "exit_code": 0,
+            "exit_code": exit_code,
             "stdout": stdout_str,
             "stderr": stderr_str,
             "timed_out": False,

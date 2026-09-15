@@ -528,6 +528,47 @@ DO_05 = BenchmarkTask(
     ],
 )
 
+RUN_01 = BenchmarkTask(
+    task_id="RUN-01",
+    task_type="RUN",
+    name="Local Verification Script Execution",
+    goal="Execute the verification script 'check_env.py' using process_run with command 'python' and arguments ['check_env.py']. Observe the output line 'STATUS=OPERATIONAL' and write 'STATUS=OPERATIONAL\n' to 'summary.txt'.",
+    fixture_files={
+        "check_env.py": (
+            "import sys\n\n"
+            "print('STATUS=OPERATIONAL')\n"
+            "sys.exit(0)\n"
+        ),
+    },
+    verification_spec=VerificationSpec(
+        file_exists=["summary.txt", "check_env.py"],
+        exact_contents={
+            "summary.txt": "STATUS=OPERATIONAL\n",
+            "check_env.py": (
+                "import sys\n\n"
+                "print('STATUS=OPERATIONAL')\n"
+                "sys.exit(0)\n"
+            ),
+        },
+    ),
+    max_steps=4,
+    deterministic_responses=[
+        ProviderResult.create_tool_call(
+            tool_name="process_run",
+            arguments={"command": "python", "arguments": ["check_env.py"]},
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="file_write",
+            arguments={
+                "path": "summary.txt",
+                "content": "STATUS=OPERATIONAL\n",
+                "overwrite": True,
+            },
+        ),
+        ProviderResult.create_text("Executed check_env.py and wrote status to summary.txt."),
+    ],
+)
+
 BENCHMARK_TASKS: dict[str, BenchmarkTask] = {
     "FIND-01": FIND_01,
     "FIND-02": FIND_02,
@@ -539,6 +580,7 @@ BENCHMARK_TASKS: dict[str, BenchmarkTask] = {
     "DO-03": DO_03,
     "DO-04": DO_04,
     "DO-05": DO_05,
+    "RUN-01": RUN_01,
 }
 
 

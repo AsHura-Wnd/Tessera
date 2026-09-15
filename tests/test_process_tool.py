@@ -54,17 +54,17 @@ def test_process_run_stderr_capture():
 
 
 def test_process_run_nonzero_exit():
-    """4. Non-zero exit code is recorded, returns success=False, and is not converted to success."""
+    """4. Non-zero exit code is recorded, returns success=True, and is observable with exit_code/stderr."""
     script = "import sys; sys.stderr.write('fatal abort\\n'); sys.exit(42)"
     result: ToolResult = handle_process_run(
         command=sys.executable,
         arguments=["-c", script],
     )
-    assert result.success is False
+    assert result.success is True
     assert result.output["exit_code"] == 42
     assert result.output["stderr"] == "fatal abort\n"
     assert result.output["timed_out"] is False
-    assert "42" in (result.error or "")
+    assert result.error is None
 
 
 def test_process_run_invalid_command_creation_failure():
@@ -288,3 +288,92 @@ def test_process_run_input_validation_guards():
     r6 = handle_process_run(command=sys.executable, timeout=-5)
     assert r6.success is False
     assert "Timeout must be greater than 0" in (r6.error or "")
+
+
+def test_process_run_omitted_working_directory_uses_workspace_root(tmp_path: Path):
+    """15. Omitted working_directory uses workspace_root as process cwd."""
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    marker = ws / "in_workspace.txt"
+    marker.write_text("ws_marker_content", encoding="utf-8")
+
+    script = "import os; print(os.path.exists('in_workspace.txt'))"
+    result = handle_process_run(
+        command=sys.executable,
+        arguments=["-c", script],
+        working_directory=None,
+        workspace_root=ws,
+    )
+    assert result.success is True
+    assert result.output["exit_code"] == 0
+    assert result.output["stdout"].strip() == "True"
+
+
+def test_process_run_relative_working_directory_resolves_beneath_workspace_root(tmp_path: Path):
+    """16. Relative working_directory resolves beneath workspace_root."""
+    ws = tmp_path / "workspace"
+    sub = ws / "sub"
+    sub.mkdir(parents=True)
+    marker = sub / "in_sub.txt"
+    marker.write_text("sub_marker", encoding="utf-8")
+
+    script = "import os; print(os.path.exists('in_sub.txt'))"
+    result = handle_process_run(
+        command=sys.executable,
+        arguments=["-c", script],
+        working_directory="sub",
+        workspace_root=ws,
+    )
+    assert result.success is True
+    assert result.output["exit_code"] == 0
+    assert result.output["stdout"].strip() == "True"
+
+    # Traversal escaping workspace_root is rejected
+    escape_result = handle_process_run(
+        command=sys.executable,
+        arguments=["-c", "print('should not run')"],
+        working_directory="../outside",
+        workspace_root=ws,
+    )
+    assert escape_result.success is False
+    assert "resolves outside workspace root" in (escape_result.error or "")
+
+
+def test_process_run_direct_standalone_invocation_retains_cwd_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """17. Direct standalone invocation without workspace_root retains cwd fallback."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "standalone_marker.txt").write_text("marker", encoding="utf-8")
+
+    script = "import os; print(os.path.exists('standalone_marker.txt'))"
+    result = handle_process_run(
+        command=sys.executable,
+        arguments=["-c", script],
+        working_directory=None,
+        workspace_root=None,
+    )
+    assert result.success is True
+    assert result.output["exit_code"] == 0
+    assert result.output["stdout"].strip() == "True"
+
+
+def test_process_run_execution_context_integration(tmp_path: Path):
+    """18. ToolDefinition.execute(context=...) supplies workspace_root to handle_process_run."""
+    from tessera.tools.interface import ExecutionContext
+
+    ws = tmp_path / "ws_ctx"
+    ws.mkdir()
+    (ws / "ctx_marker.txt").write_text("ctx_ok", encoding="utf-8")
+
+    ctx = ExecutionContext(workspace_root=ws)
+    script = "import os; print(os.path.exists('ctx_marker.txt'))"
+
+    # Omitting working_directory in execute() forwards workspace_root from context
+    res = PROCESS_RUN_TOOL.execute(
+        context=ctx,
+        command=sys.executable,
+        arguments=["-c", script],
+    )
+    assert res.success is True
+    assert res.output["exit_code"] == 0
+    assert res.output["stdout"].strip() == "True"
+

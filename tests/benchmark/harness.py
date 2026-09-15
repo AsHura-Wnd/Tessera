@@ -221,12 +221,30 @@ class BenchmarkHarness:
             recorder = TrajectoryRecorder(output_dir=traj_dir)
 
             # 3. Setup and execute AgentLoop
-            loop = AgentLoop(
-                provider=provider,
-                workspace_root=workspace_dir,
-                recorder=recorder,
-                max_steps=task.max_steps,
-            )
+            if task.task_type == "RUN" or task.task_id.startswith("RUN-"):
+                from tessera.tools.authorization import get_phase_2_authorizer
+                from tessera.tools.registry import get_phase_2_registry
+                from tessera.tools.validator import Phase2ToolValidator
+
+                p2_registry = get_phase_2_registry()
+                p2_validator = Phase2ToolValidator(workspace_root=workspace_dir, registry=p2_registry)
+                p2_authorizer = get_phase_2_authorizer()
+                loop = AgentLoop(
+                    provider=provider,
+                    workspace_root=workspace_dir,
+                    registry=p2_registry,
+                    validator=p2_validator,
+                    authorizer=p2_authorizer,
+                    recorder=recorder,
+                    max_steps=task.max_steps,
+                )
+            else:
+                loop = AgentLoop(
+                    provider=provider,
+                    workspace_root=workspace_dir,
+                    recorder=recorder,
+                    max_steps=task.max_steps,
+                )
             run_result: RunResult = loop.run(goal=task.goal, run_id=run_id)
 
             run_status = run_result.status.value

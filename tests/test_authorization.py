@@ -411,6 +411,7 @@ def test_process_run_failure_propagates_as_structured_tool_result(
                 "arguments": ["-c", "import sys; sys.stderr.write('fatal boom\\n'); sys.exit(42)"],
             },
         ),
+        ProviderResult.create_text(text="Observed failure with exit code 42."),
     ])
 
     loop = AgentLoop(
@@ -423,14 +424,21 @@ def test_process_run_failure_propagates_as_structured_tool_result(
 
     result = loop.run("Run failing process")
 
-    assert result.status == RunStatus.EXECUTION_FAILURE
-    assert result.steps_taken == 1
+    assert result.status == RunStatus.TEXT
+    assert result.steps_taken == 2
     assert result.last_tool_result is not None
-    assert result.last_tool_result.success is False
+    assert result.last_tool_result.success is True
     assert result.last_tool_result.output["exit_code"] == 42
     assert "fatal boom" in result.last_tool_result.output["stderr"]
     assert result.last_tool_result.output["timed_out"] is False
-    assert "Process exited with non-zero exit code: 42" in str(result.error)
+    assert result.error is None
+    # Verify the tool observation was fed into context for the subsequent turn
+    second_call_context = provider.call_history[1]["context"]
+    assert second_call_context is not None
+    tool_obs = [m for m in second_call_context if m.get("role") == "tool"]
+    assert len(tool_obs) == 1
+    assert '"exit_code": 42' in tool_obs[0]["content"]
+    assert "fatal boom" in tool_obs[0]["content"]
 
 
 # ---------------------------------------------------------------------------
