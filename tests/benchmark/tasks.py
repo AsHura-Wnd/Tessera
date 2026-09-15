@@ -636,6 +636,253 @@ RUN_02 = BenchmarkTask(
     ],
 )
 
+EVAL_01 = BenchmarkTask(
+    task_id="EVAL-01",
+    task_type="EVAL",
+    name="Test Failure Repair",
+    goal="Run the test suite in 'test_calc.py'. If tests fail, identify the cause, make the necessary correction in 'calc.py', rerun 'test_calc.py' to verify the fix passes, and write 'TESTS_PASSED\n' to 'status.txt'.",
+    fixture_files={
+        "calc.py": (
+            "def multiply(a, b):\n"
+            "    return a + b\n"
+        ),
+        "test_calc.py": (
+            "import sys\n\n"
+            "sys.dont_write_bytecode = True\n\n"
+            "from calc import multiply\n\n\n"
+            "def test_multiply():\n"
+            "    assert multiply(3, 4) == 12\n\n\n"
+            "if __name__ == '__main__':\n"
+            "    test_multiply()\n"
+            "    print('TESTS_PASSED')\n"
+        ),
+    },
+    verification_spec=VerificationSpec(
+        file_exists=["status.txt", "calc.py", "test_calc.py"],
+        exact_contents={
+            "status.txt": "TESTS_PASSED\n",
+            "calc.py": (
+                "def multiply(a, b):\n"
+                "    return a * b\n"
+            ),
+            "test_calc.py": (
+                "import sys\n\n"
+                "sys.dont_write_bytecode = True\n\n"
+                "from calc import multiply\n\n\n"
+                "def test_multiply():\n"
+                "    assert multiply(3, 4) == 12\n\n\n"
+                "if __name__ == '__main__':\n"
+                "    test_multiply()\n"
+                "    print('TESTS_PASSED')\n"
+            ),
+        },
+    ),
+    max_steps=6,
+    deterministic_responses=[
+        ProviderResult.create_tool_call(
+            tool_name="process_run",
+            arguments={"command": "python", "arguments": ["test_calc.py"]},
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="file_edit",
+            arguments={
+                "path": "calc.py",
+                "target": "return a + b",
+                "replacement": "return a * b",
+            },
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="process_run",
+            arguments={"command": "python", "arguments": ["test_calc.py"]},
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="file_write",
+            arguments={
+                "path": "status.txt",
+                "content": "TESTS_PASSED\n",
+                "overwrite": True,
+            },
+        ),
+        ProviderResult.create_text("Repaired calc.py, verified test_calc.py passes, and recorded status to status.txt."),
+    ],
+)
+
+EVAL_02 = BenchmarkTask(
+    task_id="EVAL-02",
+    task_type="EVAL",
+    name="Configuration Diagnosis",
+    goal="Run 'check_config.py'. If the check fails, diagnose the configuration issue in 'config.json', make the necessary correction, rerun 'check_config.py' to verify it passes, and write 'CONFIG_REPAIRED\n' to 'status.txt'.",
+    fixture_files={
+        "config.json": (
+            "{\n"
+            '  "service_name": "gateway",\n'
+            '  "port": 8080,\n'
+            '  "environment": "development"\n'
+            "}\n"
+        ),
+        "check_config.py": (
+            "import json\n"
+            "import sys\n\n"
+            "with open('config.json', 'r', encoding='utf-8') as f:\n"
+            "    cfg = json.load(f)\n\n"
+            "if cfg.get('environment') != 'production':\n"
+            '    sys.stderr.write(f"Invalid environment: {cfg.get(\'environment\')}. Expected \'production\'.\\n")\n'
+            "    sys.exit(1)\n\n"
+            "print('CONFIG_VALID')\n"
+            "sys.exit(0)\n"
+        ),
+    },
+    verification_spec=VerificationSpec(
+        file_exists=["status.txt", "config.json", "check_config.py"],
+        exact_contents={
+            "status.txt": "CONFIG_REPAIRED\n",
+            "config.json": (
+                "{\n"
+                '  "service_name": "gateway",\n'
+                '  "port": 8080,\n'
+                '  "environment": "production"\n'
+                "}\n"
+            ),
+            "check_config.py": (
+                "import json\n"
+                "import sys\n\n"
+                "with open('config.json', 'r', encoding='utf-8') as f:\n"
+                "    cfg = json.load(f)\n\n"
+                "if cfg.get('environment') != 'production':\n"
+                '    sys.stderr.write(f"Invalid environment: {cfg.get(\'environment\')}. Expected \'production\'.\\n")\n'
+                "    sys.exit(1)\n\n"
+                "print('CONFIG_VALID')\n"
+                "sys.exit(0)\n"
+            ),
+        },
+    ),
+    max_steps=6,
+    deterministic_responses=[
+        ProviderResult.create_tool_call(
+            tool_name="process_run",
+            arguments={"command": "python", "arguments": ["check_config.py"]},
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="file_edit",
+            arguments={
+                "path": "config.json",
+                "target": '"environment": "development"',
+                "replacement": '"environment": "production"',
+            },
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="process_run",
+            arguments={"command": "python", "arguments": ["check_config.py"]},
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="file_write",
+            arguments={
+                "path": "status.txt",
+                "content": "CONFIG_REPAIRED\n",
+                "overwrite": True,
+            },
+        ),
+        ProviderResult.create_text("Corrected config.json environment, verified check_config.py passes, and recorded status to status.txt."),
+    ],
+)
+
+EVAL_03 = BenchmarkTask(
+    task_id="EVAL-03",
+    task_type="EVAL",
+    name="Log-Driven Local Repair",
+    goal="Run 'app.py' to check authentication. If it fails, inspect the failure details and deployment logs in 'logs/deploy.log' to find the active token, update 'token.txt' with the active token, rerun 'app.py' to confirm authentication succeeds, and write 'TOKEN_REPAIRED\n' to 'status.txt'.",
+    fixture_files={
+        "app.py": (
+            "import hashlib\n"
+            "import sys\n"
+            "from pathlib import Path\n\n"
+            "token_file = Path('token.txt')\n"
+            "if not token_file.is_file():\n"
+            "    sys.stderr.write('Missing token.txt\\n')\n"
+            "    sys.exit(1)\n\n"
+            "token = token_file.read_text(encoding='utf-8').strip()\n"
+            "expected_hash = 'ce4beeef474ee2c5fc3750767883fd17040b862f3a0fe178ad052205f6801568'\n"
+            "actual_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()\n\n"
+            "if actual_hash != expected_hash:\n"
+            '    sys.stderr.write(f"Authentication failed for token: \'{token}\'. Consult logs/deploy.log for the active issued token.\\n")\n'
+            "    sys.exit(1)\n\n"
+            "print('AUTH_SUCCESS')\n"
+            "sys.exit(0)\n"
+        ),
+        "token.txt": "OLD-EXPIRED-TOKEN-000\n",
+        "logs/deploy.log": (
+            "[2026-09-15 08:00:00] Starting deployment sequence.\n"
+            "[2026-09-15 08:00:05] Token OLD-EXPIRED-TOKEN-000 has expired and was revoked.\n"
+            "[2026-09-15 08:00:10] Generating active service token...\n"
+            "[2026-09-15 08:00:15] Active valid token issued: SEC-ALPHA-99482-PROD\n"
+            "[2026-09-15 08:00:20] Deployment complete. Service listening.\n"
+        ),
+    },
+    verification_spec=VerificationSpec(
+        file_exists=["status.txt", "token.txt", "app.py", "logs/deploy.log"],
+        exact_contents={
+            "status.txt": "TOKEN_REPAIRED\n",
+            "token.txt": "SEC-ALPHA-99482-PROD\n",
+            "app.py": (
+                "import hashlib\n"
+                "import sys\n"
+                "from pathlib import Path\n\n"
+                "token_file = Path('token.txt')\n"
+                "if not token_file.is_file():\n"
+                "    sys.stderr.write('Missing token.txt\\n')\n"
+                "    sys.exit(1)\n\n"
+                "token = token_file.read_text(encoding='utf-8').strip()\n"
+                "expected_hash = 'ce4beeef474ee2c5fc3750767883fd17040b862f3a0fe178ad052205f6801568'\n"
+                "actual_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()\n\n"
+                "if actual_hash != expected_hash:\n"
+                '    sys.stderr.write(f"Authentication failed for token: \'{token}\'. Consult logs/deploy.log for the active issued token.\\n")\n'
+                "    sys.exit(1)\n\n"
+                "print('AUTH_SUCCESS')\n"
+                "sys.exit(0)\n"
+            ),
+            "logs/deploy.log": (
+                "[2026-09-15 08:00:00] Starting deployment sequence.\n"
+                "[2026-09-15 08:00:05] Token OLD-EXPIRED-TOKEN-000 has expired and was revoked.\n"
+                "[2026-09-15 08:00:10] Generating active service token...\n"
+                "[2026-09-15 08:00:15] Active valid token issued: SEC-ALPHA-99482-PROD\n"
+                "[2026-09-15 08:00:20] Deployment complete. Service listening.\n"
+            ),
+        },
+    ),
+    max_steps=8,
+    deterministic_responses=[
+        ProviderResult.create_tool_call(
+            tool_name="process_run",
+            arguments={"command": "python", "arguments": ["app.py"]},
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="file_read",
+            arguments={"path": "logs/deploy.log"},
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="file_write",
+            arguments={
+                "path": "token.txt",
+                "content": "SEC-ALPHA-99482-PROD\n",
+                "overwrite": True,
+            },
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="process_run",
+            arguments={"command": "python", "arguments": ["app.py"]},
+        ),
+        ProviderResult.create_tool_call(
+            tool_name="file_write",
+            arguments={
+                "path": "status.txt",
+                "content": "TOKEN_REPAIRED\n",
+                "overwrite": True,
+            },
+        ),
+        ProviderResult.create_text("Retrieved active token from logs/deploy.log, updated token.txt, verified app.py passes, and recorded status to status.txt."),
+    ],
+)
+
 BENCHMARK_TASKS: dict[str, BenchmarkTask] = {
     "FIND-01": FIND_01,
     "FIND-02": FIND_02,
@@ -649,6 +896,9 @@ BENCHMARK_TASKS: dict[str, BenchmarkTask] = {
     "DO-05": DO_05,
     "RUN-01": RUN_01,
     "RUN-02": RUN_02,
+    "EVAL-01": EVAL_01,
+    "EVAL-02": EVAL_02,
+    "EVAL-03": EVAL_03,
 }
 
 

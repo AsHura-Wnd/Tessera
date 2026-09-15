@@ -221,7 +221,7 @@ class BenchmarkHarness:
             recorder = TrajectoryRecorder(output_dir=traj_dir)
 
             # 3. Setup and execute AgentLoop
-            if task.task_type == "RUN" or task.task_id.startswith("RUN-"):
+            if task.task_type in ("RUN", "EVAL") or task.task_id.startswith(("RUN-", "EVAL-")):
                 from tessera.tools.authorization import get_phase_2_authorizer
                 from tessera.tools.registry import get_phase_2_registry
                 from tessera.tools.validator import Phase2ToolValidator
