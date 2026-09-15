@@ -111,9 +111,41 @@ def handle_file_find(
     directory: str | Path = ".",
     pattern: str = "*",
     content_pattern: str | None = None,
+    workspace_root: str | Path | None = None,
 ) -> ToolResult:
     """Discover files matching a filename glob pattern and optional content regex."""
-    base_dir = Path(directory)
+    if workspace_root is not None:
+        root = Path(workspace_root).resolve()
+        raw_dir = Path(directory)
+        base_dir = raw_dir.resolve() if raw_dir.is_absolute() else (root / raw_dir).resolve()
+        try:
+            base_dir.relative_to(root)
+        except ValueError:
+            return ToolResult(
+                success=False,
+                error=f"Directory '{directory}' resolves outside workspace root '{root}'",
+            )
+    else:
+        raw_dir = Path(directory)
+        cwd = Path.cwd().resolve()
+        if raw_dir.is_absolute():
+            base_dir = raw_dir.resolve()
+            try:
+                base_dir.relative_to(cwd)
+                root = cwd
+            except ValueError:
+                root = base_dir
+        else:
+            root = cwd
+            base_dir = (root / raw_dir).resolve()
+            try:
+                base_dir.relative_to(root)
+            except ValueError:
+                return ToolResult(
+                    success=False,
+                    error=f"Directory '{directory}' resolves outside workspace root '{root}'",
+                )
+
     if not base_dir.exists():
         return ToolResult(success=False, error=f"Directory not found: '{base_dir}'")
     if not base_dir.is_dir():
@@ -130,9 +162,9 @@ def handle_file_find(
             if not file_path.is_file():
                 continue
 
-            rel_path = str(file_path.relative_to(base_dir) if base_dir != file_path else file_path.name)
+            rel_path = file_path.resolve().relative_to(root)
             record: dict[str, Any] = {
-                "path": rel_path.replace("\\", "/"),
+                "path": str(rel_path).replace("\\", "/"),
                 "size_bytes": file_path.stat().st_size,
             }
 

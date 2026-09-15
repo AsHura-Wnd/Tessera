@@ -11,7 +11,7 @@ import uuid
 
 from tessera.models.provider import ModelProvider, ProviderOutcome, ProviderResult
 from tessera.storage.trajectory import TrajectoryRecorder
-from tessera.tools.interface import ToolCall, ToolResult
+from tessera.tools.interface import ExecutionContext, ToolCall, ToolResult
 from tessera.tools.authorization import ToolAuthorizer, get_phase_1_authorizer
 from tessera.tools.registry import ToolRegistry, get_default_registry
 from tessera.tools.validator import ToolValidator
@@ -202,7 +202,11 @@ class AgentLoop:
                 if val_result.resolved_paths:
                     exec_args.update(val_result.resolved_paths)
 
-                tool_result: ToolResult = val_result.tool.execute(**exec_args)
+                exec_context = ExecutionContext(workspace_root=self.workspace_root)
+                tool_result: ToolResult = val_result.tool.execute(
+                    context=exec_context,
+                    **exec_args,
+                )
                 last_tool_result = tool_result
 
                 # Record execution event

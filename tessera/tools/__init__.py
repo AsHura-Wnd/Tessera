@@ -16,6 +16,7 @@ from tessera.tools.builtins import (
     PHASE_1_BUILTIN_TOOLS,
 )
 from tessera.tools.interface import (
+    ExecutionContext,
     ToolCall,
     ToolDefinition,
     ToolParameter,
@@ -41,6 +42,7 @@ from tessera.tools.validator import (
 __all__ = [
     "ActionBudget",
     "AuthorizationResult",
+    "ExecutionContext",
     "ExecutionPhase",
     "FILE_EDIT_TOOL",
     "FILE_FIND_TOOL",
